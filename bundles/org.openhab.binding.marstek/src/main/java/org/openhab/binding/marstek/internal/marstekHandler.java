@@ -218,7 +218,7 @@ public class marstekHandler extends BaseThingHandler {
         try {
             String host = config != null ? config.hostname : "127.0.0.1";
             int port = config != null ? config.port : 30000;
-            int timeoutMs = 2000;
+            int timeoutMs = 5000; // Increased from 2000ms to 5000ms
 
             // Test if device is reachable before querying
             boolean deviceReachable = testDeviceReachable(host, port, timeoutMs);
@@ -240,13 +240,27 @@ public class marstekHandler extends BaseThingHandler {
             // Device responded, reset failure counter
             consecutiveFailures = 0;
 
-            // Query all components
-            queryBatteryStatus(host, port, timeoutMs);
-            queryPvStatus(host, port, timeoutMs);
+            // Send warmup request (first UDP call after inactivity often times out)
+            // Use Marstek.GetDevice as it's lightweight and wakes up the UDP handler
+            String warmupRequest = "{\"id\":0,\"method\":\"Marstek.GetDevice\",\"params\":{}}";
+            byte[] warmupResponse = MarstekUdpHelper.sendRequest(host, port,
+                    warmupRequest.getBytes(StandardCharsets.UTF_8), 0, timeoutMs);
+            if (warmupResponse != null) {
+                logger.trace("Warmup call successful ({} bytes)", warmupResponse.length);
+            }
+
+            // Query all components with 1 second delays to avoid overwhelming the device
             queryEnergySystemStatus(host, port, timeoutMs);
+            Thread.sleep(1000);
             queryEnergySystemMode(host, port, timeoutMs);
+            Thread.sleep(1000);
             queryEnergyMeterStatus(host, port, timeoutMs);
+            Thread.sleep(1000);
             queryWifiStatus(host, port, timeoutMs);
+            Thread.sleep(1000);
+            queryBatteryStatus(host, port, 10000);
+            // PV.GetStatus is only supported on Venus D models, skip for Venus C/E
+            // queryPvStatus(host, port, timeoutMs);
 
             // Update last update timestamp
             safeUpdateState(CHANNEL_LAST_UPDATE, new DateTimeType(ZonedDateTime.now()));
@@ -290,25 +304,34 @@ public class marstekHandler extends BaseThingHandler {
 
     private void queryBatteryStatus(String host, int port, int timeoutMs) {
         try {
+            logger.debug("Querying Bat.GetStatus from {}:{} with {}ms timeout", host, port, timeoutMs);
             String request = "{\"id\":0,\"method\":\"Bat.GetStatus\",\"params\":{\"id\":0}}";
             byte[] response = MarstekUdpHelper.sendRequest(host, port, request.getBytes(StandardCharsets.UTF_8), 0,
                     timeoutMs);
 
             if (response != null) {
-                JsonObject json = gson.fromJson(new String(response, StandardCharsets.UTF_8), JsonObject.class);
+                String responseStr = new String(response, StandardCharsets.UTF_8);
+                logger.trace("Battery response ({} bytes): {}", response.length,
+                        responseStr.replace("\n", " ").replace("\t", ""));
+                JsonObject json = gson.fromJson(responseStr, JsonObject.class);
                 JsonObject result = json.getAsJsonObject("result");
 
                 if (result != null) {
+                    logger.debug("Successfully parsed Bat.GetStatus result");
                     updateNumberChannel(CHANNEL_BATTERY_SOC, result, "soc", Units.PERCENT);
                     updateNumberChannel(CHANNEL_BATTERY_TEMPERATURE, result, "bat_temp", SIUnits.CELSIUS);
                     updateNumberChannel(CHANNEL_BATTERY_CAPACITY, result, "bat_capacity", Units.WATT_HOUR);
                     updateNumberChannel(CHANNEL_BATTERY_RATED_CAPACITY, result, "rated_capacity", Units.WATT_HOUR);
                     updateSwitchChannel(CHANNEL_CHARGING_FLAG, result, "charg_flag");
                     updateSwitchChannel(CHANNEL_DISCHARGING_FLAG, result, "dischrg_flag");
+                } else {
+                    logger.debug("Bat.GetStatus returned null result");
                 }
+            } else {
+                logger.debug("No response from Bat.GetStatus (timeout after {}ms)", timeoutMs);
             }
         } catch (Exception e) {
-            logger.debug("Error querying battery status: {}", e.getMessage());
+            logger.debug("Error querying battery status: {}", e.getMessage(), e);
         }
     }
 
@@ -319,7 +342,10 @@ public class marstekHandler extends BaseThingHandler {
                     timeoutMs);
 
             if (response != null) {
-                JsonObject json = gson.fromJson(new String(response, StandardCharsets.UTF_8), JsonObject.class);
+                String responseStr = new String(response, StandardCharsets.UTF_8);
+                logger.trace("PV response ({} bytes): {}", response.length,
+                        responseStr.replace("\n", " ").replace("\t", ""));
+                JsonObject json = gson.fromJson(responseStr, JsonObject.class);
                 JsonObject result = json.getAsJsonObject("result");
 
                 if (result != null) {
@@ -327,6 +353,8 @@ public class marstekHandler extends BaseThingHandler {
                     updateNumberChannel(CHANNEL_PV_VOLTAGE, result, "pv_voltage", Units.VOLT);
                     updateNumberChannel(CHANNEL_PV_CURRENT, result, "pv_current", Units.AMPERE);
                 }
+            } else {
+                logger.debug("No response from PV.GetStatus (timeout or error)");
             }
         } catch (Exception e) {
             logger.debug("Error querying PV status: {}", e.getMessage());
@@ -340,7 +368,10 @@ public class marstekHandler extends BaseThingHandler {
                     timeoutMs);
 
             if (response != null) {
-                JsonObject json = gson.fromJson(new String(response, StandardCharsets.UTF_8), JsonObject.class);
+                String responseStr = new String(response, StandardCharsets.UTF_8);
+                logger.trace("ES response ({} bytes): {}", response.length,
+                        responseStr.replace("\n", " ").replace("\t", ""));
+                JsonObject json = gson.fromJson(responseStr, JsonObject.class);
                 JsonObject result = json.getAsJsonObject("result");
 
                 if (result != null) {
@@ -354,6 +385,8 @@ public class marstekHandler extends BaseThingHandler {
                             Units.WATT_HOUR);
                     updateNumberChannel(CHANNEL_TOTAL_LOAD_ENERGY, result, "total_load_energy", Units.WATT_HOUR);
                 }
+            } else {
+                logger.debug("No response from ES.GetStatus (timeout or error)");
             }
         } catch (Exception e) {
             logger.debug("Error querying energy system status: {}", e.getMessage());
@@ -367,13 +400,26 @@ public class marstekHandler extends BaseThingHandler {
                     timeoutMs);
 
             if (response != null) {
-                JsonObject json = gson.fromJson(new String(response, StandardCharsets.UTF_8), JsonObject.class);
+                String responseStr = new String(response, StandardCharsets.UTF_8);
+                logger.trace("ES mode response ({} bytes): {}", response.length,
+                        responseStr.replace("\n", " ").replace("\t", ""));
+                JsonObject json = gson.fromJson(responseStr, JsonObject.class);
                 JsonObject result = json.getAsJsonObject("result");
 
-                if (result != null && result.has("mode")) {
-                    String mode = result.get("mode").getAsString();
-                    safeUpdateState(CHANNEL_OPERATING_MODE, new StringType(mode));
+                if (result != null) {
+                    // Extract operating mode
+                    if (result.has("mode")) {
+                        String mode = result.get("mode").getAsString();
+                        safeUpdateState(CHANNEL_OPERATING_MODE, new StringType(mode));
+                    }
+                    // VenusE devices return additional data in ES.GetMode including bat_soc
+                    updateNumberChannel(CHANNEL_BATTERY_SOC, result, "bat_soc", Units.PERCENT);
+                    updateNumberChannel(CHANNEL_ONGRID_POWER, result, "ongrid_power", Units.WATT);
+                    updateNumberChannel(CHANNEL_OFFGRID_POWER, result, "offgrid_power", Units.WATT);
+                    // Note: Phase power and CT state come from EM.GetStatus, not ES.GetMode
                 }
+            } else {
+                logger.debug("No response from ES.GetMode (timeout or error)");
             }
         } catch (Exception e) {
             logger.debug("Error querying energy system mode: {}", e.getMessage());
@@ -387,7 +433,10 @@ public class marstekHandler extends BaseThingHandler {
                     timeoutMs);
 
             if (response != null) {
-                JsonObject json = gson.fromJson(new String(response, StandardCharsets.UTF_8), JsonObject.class);
+                String responseStr = new String(response, StandardCharsets.UTF_8);
+                logger.trace("EM response ({} bytes): {}", response.length,
+                        responseStr.replace("\n", " ").replace("\t", ""));
+                JsonObject json = gson.fromJson(responseStr, JsonObject.class);
                 JsonObject result = json.getAsJsonObject("result");
 
                 if (result != null) {
@@ -400,6 +449,8 @@ public class marstekHandler extends BaseThingHandler {
                     updateNumberChannel(CHANNEL_PHASE_C_POWER, result, "c_power", Units.WATT);
                     updateNumberChannel(CHANNEL_TOTAL_METER_POWER, result, "total_power", Units.WATT);
                 }
+            } else {
+                logger.debug("No response from EM.GetStatus (timeout or error)");
             }
         } catch (Exception e) {
             logger.debug("Error querying energy meter status: {}", e.getMessage());
@@ -413,7 +464,10 @@ public class marstekHandler extends BaseThingHandler {
                     timeoutMs);
 
             if (response != null) {
-                JsonObject json = gson.fromJson(new String(response, StandardCharsets.UTF_8), JsonObject.class);
+                String responseStr = new String(response, StandardCharsets.UTF_8);
+                logger.trace("WiFi response ({} bytes): {}", response.length,
+                        responseStr.replace("\n", " ").replace("\t", ""));
+                JsonObject json = gson.fromJson(responseStr, JsonObject.class);
                 JsonObject result = json.getAsJsonObject("result");
 
                 if (result != null) {
@@ -427,6 +481,8 @@ public class marstekHandler extends BaseThingHandler {
                         safeUpdateState(CHANNEL_IP_ADDRESS, new StringType(result.get("sta_ip").getAsString()));
                     }
                 }
+            } else {
+                logger.debug("No response from Wifi.GetStatus (timeout or error)");
             }
         } catch (Exception e) {
             logger.debug("Error querying WiFi status: {}", e.getMessage());
@@ -580,7 +636,7 @@ public class marstekHandler extends BaseThingHandler {
         // Extract period index (0-3)
         int periodIndex = -1;
         for (int i = 1; i <= 4; i++) {
-            if (groupId.equals(CHANNEL_GROUP_PERIOD_PREFIX + i)) {
+            if ((CHANNEL_GROUP_PERIOD_PREFIX + i).equals(groupId)) {
                 periodIndex = i - 1;
                 break;
             }

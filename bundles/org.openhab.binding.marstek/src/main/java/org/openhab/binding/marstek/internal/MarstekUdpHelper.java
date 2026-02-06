@@ -1,3 +1,15 @@
+/*
+ * Copyright (c) 2010-2026 Contributors to the openHAB project
+ *
+ * See the NOTICE file(s) distributed with this work for additional
+ * information.
+ *
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Public License 2.0 which is available at
+ * http://www.eclipse.org/legal/epl-2.0
+ *
+ * SPDX-License-Identifier: EPL-2.0
+ */
 package org.openhab.binding.marstek.internal;
 
 import java.io.IOException;
@@ -8,10 +20,16 @@ import java.net.InetSocketAddress;
 import java.net.SocketTimeoutException;
 import java.util.Arrays;
 
+import org.eclipse.jdt.annotation.NonNullByDefault;
+import org.eclipse.jdt.annotation.Nullable;
+
 /**
  * Small helper that sends a UDP request and waits for a response.
  * It opens a temporary DatagramSocket bound to the given local port and returns the first response bytes received.
+ *
+ * @author Achim Fischer - Initial contribution
  */
+@NonNullByDefault
 public class MarstekUdpHelper {
 
     /**
@@ -25,8 +43,8 @@ public class MarstekUdpHelper {
      * @return the response bytes or null if timeout
      * @throws IOException on socket errors
      */
-    public static byte[] sendRequest(String host, int port, byte[] requestBytes, int localBindPort, int timeoutMs)
-            throws IOException {
+    public static byte @Nullable [] sendRequest(String host, int port, byte[] requestBytes, int localBindPort,
+            int timeoutMs) throws IOException {
         DatagramSocket socket = null;
         try {
             socket = new DatagramSocket(new InetSocketAddress(localBindPort));
