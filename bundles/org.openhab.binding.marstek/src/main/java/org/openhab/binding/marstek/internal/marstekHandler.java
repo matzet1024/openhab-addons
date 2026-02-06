@@ -148,6 +148,12 @@ public class marstekHandler extends BaseThingHandler {
             refreshInterval = config.refreshInterval;
         }
 
+        // Enforce minimum refresh interval of 5 seconds to avoid overwhelming device
+        if (refreshInterval < 5) {
+            logger.info("Refresh interval {} seconds is too low, using minimum of 5 seconds", refreshInterval);
+            refreshInterval = 5;
+        }
+
         updateStatus(ThingStatus.UNKNOWN);
 
         scheduler.execute(() -> {
@@ -160,8 +166,8 @@ public class marstekHandler extends BaseThingHandler {
 
             if (thingReachable) {
                 updateStatus(ThingStatus.ONLINE);
-                // Schedule periodic polling
-                refreshTask = scheduler.scheduleWithFixedDelay(this::refresh, 0, Math.max(1, refreshInterval),
+                // Schedule periodic polling (minimum 5 seconds enforced above)
+                refreshTask = scheduler.scheduleWithFixedDelay(this::refresh, 0, refreshInterval,
                         java.util.concurrent.TimeUnit.SECONDS);
             } else {
                 updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.COMMUNICATION_ERROR, "Could not connect to device");

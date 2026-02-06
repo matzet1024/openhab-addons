@@ -83,9 +83,9 @@
 				<label>Hostname</label>
 				<description>Hostname or IP address of the Marstek device</description>
 			</parameter>
-			<parameter name="refreshInterval" type="integer" unit="s" min="1">
+			<parameter name="refreshInterval" type="integer" unit="s" min="5">
 				<label>Refresh Interval</label>
-				<description>Polling interval in seconds</description>
+				<description>Polling interval in seconds (minimum 5 seconds to avoid overwhelming the device)</description>
 				<default>60</default>
 			</parameter>
 		</config-description>
