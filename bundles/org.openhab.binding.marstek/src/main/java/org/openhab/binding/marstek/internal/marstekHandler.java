@@ -14,6 +14,7 @@ package org.openhab.binding.marstek.internal;
 
 import static org.openhab.binding.marstek.internal.marstekBindingConstants.*;
 
+import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.time.ZonedDateTime;
 import java.util.concurrent.ScheduledFuture;
@@ -182,23 +183,48 @@ public class marstekHandler extends BaseThingHandler {
         super.dispose();
     }
 
+    protected String getHost() {
+        return config != null ? config.hostname : "127.0.0.1";
+    }
+
+    protected int getPort() {
+        return config != null ? config.port : 30000;
+    }
+
+    protected int getLocalPort() {
+        return config != null ? config.localPort : 0;
+    }
+
+    /**
+     * Wrapper around sendRequest
+     * 
+     * @param requestBytes
+     * @param timeoutMs
+     * @return
+     * @throws IOException
+     */
+    protected byte @Nullable [] sendRequest(byte[] requestBytes, int timeoutMs) throws IOException {
+        String host = getHost();
+        int port = getPort();
+        int localPort = getLocalPort();
+
+        return MarstekUdpHelper.sendRequest(host, port, requestBytes, localPort, timeoutMs);
+    }
+
     private boolean testConnection() {
         try {
-            String host = config != null ? config.hostname : "127.0.0.1";
-            int port = config != null ? config.port : 30000;
 
-            logger.debug("Testing connection to Marstek device at {}:{}", host, port);
+            logger.debug("Testing connection to Marstek device at {}:{}", getHost(), getPort());
 
             // Send Marstek.GetDevice request with longer timeout for initialization
             String request = "{\"id\":0,\"method\":\"Marstek.GetDevice\",\"params\":{}}";
-            byte[] response = MarstekUdpHelper.sendRequest(host, port, request.getBytes(StandardCharsets.UTF_8), 0,
-                    5000);
+            byte[] response = sendRequest(request.getBytes(StandardCharsets.UTF_8), 5000);
 
             if (response != null && response.length > 0) {
                 logger.debug("Connection test successful, received {} bytes", response.length);
                 return true;
             } else {
-                logger.warn("Connection test failed: No response from device at {}:{}", host, port);
+                logger.warn("Connection test failed: No response from device at {}:{}", getHost(), getPort());
                 return false;
             }
         } catch (Exception e) {
@@ -216,12 +242,10 @@ public class marstekHandler extends BaseThingHandler {
         }
 
         try {
-            String host = config != null ? config.hostname : "127.0.0.1";
-            int port = config != null ? config.port : 30000;
             int timeoutMs = 5000; // Increased from 2000ms to 5000ms
 
             // Test if device is reachable before querying
-            boolean deviceReachable = testDeviceReachable(host, port, timeoutMs);
+            boolean deviceReachable = testDeviceReachable(timeoutMs);
 
             if (!deviceReachable) {
                 consecutiveFailures++;
@@ -243,22 +267,21 @@ public class marstekHandler extends BaseThingHandler {
             // Send warmup request (first UDP call after inactivity often times out)
             // Use Marstek.GetDevice as it's lightweight and wakes up the UDP handler
             String warmupRequest = "{\"id\":0,\"method\":\"Marstek.GetDevice\",\"params\":{}}";
-            byte[] warmupResponse = MarstekUdpHelper.sendRequest(host, port,
-                    warmupRequest.getBytes(StandardCharsets.UTF_8), 0, timeoutMs);
+            byte[] warmupResponse = sendRequest(warmupRequest.getBytes(StandardCharsets.UTF_8), timeoutMs);
             if (warmupResponse != null) {
                 logger.trace("Warmup call successful ({} bytes)", warmupResponse.length);
             }
 
             // Query all components with 1 second delays to avoid overwhelming the device
-            queryEnergySystemStatus(host, port, timeoutMs);
+            queryEnergySystemStatus(timeoutMs);
             Thread.sleep(1000);
-            queryEnergySystemMode(host, port, timeoutMs);
+            queryEnergySystemMode(timeoutMs);
             Thread.sleep(1000);
-            queryEnergyMeterStatus(host, port, timeoutMs);
+            queryEnergyMeterStatus(timeoutMs);
             Thread.sleep(1000);
-            queryWifiStatus(host, port, timeoutMs);
+            queryWifiStatus(timeoutMs);
             Thread.sleep(1000);
-            queryBatteryStatus(host, port, 10000);
+            queryBatteryStatus(10000);
             // PV.GetStatus is only supported on Venus D models, skip for Venus C/E
             // queryPvStatus(host, port, timeoutMs);
 
@@ -290,11 +313,10 @@ public class marstekHandler extends BaseThingHandler {
     /**
      * Quick test to check if device is reachable
      */
-    private boolean testDeviceReachable(String host, int port, int timeoutMs) {
+    private boolean testDeviceReachable(int timeoutMs) {
         try {
             String request = "{\"id\":0,\"method\":\"Marstek.GetDevice\",\"params\":{}}";
-            byte[] response = MarstekUdpHelper.sendRequest(host, port, request.getBytes(StandardCharsets.UTF_8), 0,
-                    timeoutMs);
+            byte[] response = sendRequest(request.getBytes(StandardCharsets.UTF_8), timeoutMs);
             return response != null && response.length > 0;
         } catch (Exception e) {
             logger.debug("Device reachability test failed: {}", e.getMessage());
@@ -302,12 +324,11 @@ public class marstekHandler extends BaseThingHandler {
         }
     }
 
-    private void queryBatteryStatus(String host, int port, int timeoutMs) {
+    private void queryBatteryStatus(int timeoutMs) {
         try {
-            logger.debug("Querying Bat.GetStatus from {}:{} with {}ms timeout", host, port, timeoutMs);
+            logger.debug("Querying Bat.GetStatus from {}:{} with {}ms timeout", getHost(), getPort(), timeoutMs);
             String request = "{\"id\":0,\"method\":\"Bat.GetStatus\",\"params\":{\"id\":0}}";
-            byte[] response = MarstekUdpHelper.sendRequest(host, port, request.getBytes(StandardCharsets.UTF_8), 0,
-                    timeoutMs);
+            byte[] response = sendRequest(request.getBytes(StandardCharsets.UTF_8), timeoutMs);
 
             if (response != null) {
                 String responseStr = new String(response, StandardCharsets.UTF_8);
@@ -335,11 +356,10 @@ public class marstekHandler extends BaseThingHandler {
         }
     }
 
-    private void queryPvStatus(String host, int port, int timeoutMs) {
+    private void queryPvStatus(int timeoutMs) {
         try {
             String request = "{\"id\":0,\"method\":\"PV.GetStatus\",\"params\":{\"id\":0}}";
-            byte[] response = MarstekUdpHelper.sendRequest(host, port, request.getBytes(StandardCharsets.UTF_8), 0,
-                    timeoutMs);
+            byte[] response = sendRequest(request.getBytes(StandardCharsets.UTF_8), timeoutMs);
 
             if (response != null) {
                 String responseStr = new String(response, StandardCharsets.UTF_8);
@@ -361,11 +381,10 @@ public class marstekHandler extends BaseThingHandler {
         }
     }
 
-    private void queryEnergySystemStatus(String host, int port, int timeoutMs) {
+    private void queryEnergySystemStatus(int timeoutMs) {
         try {
             String request = "{\"id\":0,\"method\":\"ES.GetStatus\",\"params\":{\"id\":0}}";
-            byte[] response = MarstekUdpHelper.sendRequest(host, port, request.getBytes(StandardCharsets.UTF_8), 0,
-                    timeoutMs);
+            byte[] response = sendRequest(request.getBytes(StandardCharsets.UTF_8), timeoutMs);
 
             if (response != null) {
                 String responseStr = new String(response, StandardCharsets.UTF_8);
@@ -393,11 +412,10 @@ public class marstekHandler extends BaseThingHandler {
         }
     }
 
-    private void queryEnergySystemMode(String host, int port, int timeoutMs) {
+    private void queryEnergySystemMode(int timeoutMs) {
         try {
             String request = "{\"id\":0,\"method\":\"ES.GetMode\",\"params\":{\"id\":0}}";
-            byte[] response = MarstekUdpHelper.sendRequest(host, port, request.getBytes(StandardCharsets.UTF_8), 0,
-                    timeoutMs);
+            byte[] response = sendRequest(request.getBytes(StandardCharsets.UTF_8), timeoutMs);
 
             if (response != null) {
                 String responseStr = new String(response, StandardCharsets.UTF_8);
@@ -426,11 +444,10 @@ public class marstekHandler extends BaseThingHandler {
         }
     }
 
-    private void queryEnergyMeterStatus(String host, int port, int timeoutMs) {
+    private void queryEnergyMeterStatus(int timeoutMs) {
         try {
             String request = "{\"id\":0,\"method\":\"EM.GetStatus\",\"params\":{\"id\":0}}";
-            byte[] response = MarstekUdpHelper.sendRequest(host, port, request.getBytes(StandardCharsets.UTF_8), 0,
-                    timeoutMs);
+            byte[] response = sendRequest(request.getBytes(StandardCharsets.UTF_8), timeoutMs);
 
             if (response != null) {
                 String responseStr = new String(response, StandardCharsets.UTF_8);
@@ -457,11 +474,10 @@ public class marstekHandler extends BaseThingHandler {
         }
     }
 
-    private void queryWifiStatus(String host, int port, int timeoutMs) {
+    private void queryWifiStatus(int timeoutMs) {
         try {
             String request = "{\"id\":0,\"method\":\"Wifi.GetStatus\",\"params\":{\"id\":0}}";
-            byte[] response = MarstekUdpHelper.sendRequest(host, port, request.getBytes(StandardCharsets.UTF_8), 0,
-                    timeoutMs);
+            byte[] response = sendRequest(request.getBytes(StandardCharsets.UTF_8), timeoutMs);
 
             if (response != null) {
                 String responseStr = new String(response, StandardCharsets.UTF_8);
@@ -541,8 +557,7 @@ public class marstekHandler extends BaseThingHandler {
             }
 
             logger.debug("Setting operating mode to: {}", mode);
-            byte[] response = MarstekUdpHelper.sendRequest(host, port, request.getBytes(StandardCharsets.UTF_8), 0,
-                    2000);
+            byte[] response = sendRequest(request.getBytes(StandardCharsets.UTF_8), 2000);
 
             if (response != null) {
                 JsonObject json = gson.fromJson(new String(response, StandardCharsets.UTF_8), JsonObject.class);
@@ -585,8 +600,7 @@ public class marstekHandler extends BaseThingHandler {
                     power, countdown);
 
             logger.debug("Activating passive mode with power={} W, countdown={} s", power, countdown);
-            byte[] response = MarstekUdpHelper.sendRequest(host, port, request.getBytes(StandardCharsets.UTF_8), 0,
-                    2000);
+            byte[] response = sendRequest(request.getBytes(StandardCharsets.UTF_8), 2000);
 
             if (response != null) {
                 JsonObject json = gson.fromJson(new String(response, StandardCharsets.UTF_8), JsonObject.class);
@@ -773,8 +787,7 @@ public class marstekHandler extends BaseThingHandler {
                     logger.info("Manual mode: period {}, time {}-{}, weekdays {}, power {}W", i, period.start,
                             period.end, period.weekdaysBitmask, period.power);
 
-                    byte[] response = MarstekUdpHelper.sendRequest(host, port, request.getBytes(StandardCharsets.UTF_8),
-                            0, 3000);
+                    byte[] response = sendRequest(request.getBytes(StandardCharsets.UTF_8), 3000);
 
                     if (response != null) {
                         String responseStr = new String(response, StandardCharsets.UTF_8);
