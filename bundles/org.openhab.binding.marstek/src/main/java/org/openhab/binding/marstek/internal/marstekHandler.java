@@ -155,7 +155,9 @@ public class marstekHandler extends BaseThingHandler {
 
         // Warn if refresh interval is very aggressive
         if (refreshInterval < 5) {
-            logger.warn("Refresh interval {} seconds is very aggressive; may cause device to drop packets or become unresponsive", refreshInterval);
+            logger.warn(
+                    "Refresh interval {} seconds is very aggressive; may cause device to drop packets or become unresponsive",
+                    refreshInterval);
         }
 
         updateStatus(ThingStatus.UNKNOWN);
