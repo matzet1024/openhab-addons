@@ -153,10 +153,9 @@ public class marstekHandler extends BaseThingHandler {
             refreshInterval = config.refreshInterval;
         }
 
-        // Enforce minimum refresh interval of 5 seconds to avoid overwhelming device
+        // Warn if refresh interval is very aggressive
         if (refreshInterval < 5) {
-            logger.info("Refresh interval {} seconds is too low, using minimum of 5 seconds", refreshInterval);
-            refreshInterval = 5;
+            logger.warn("Refresh interval {} seconds is very aggressive; may cause device to drop packets or become unresponsive", refreshInterval);
         }
 
         updateStatus(ThingStatus.UNKNOWN);
