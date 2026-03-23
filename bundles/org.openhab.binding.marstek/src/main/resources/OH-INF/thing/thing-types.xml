@@ -83,12 +83,12 @@
 				<label>Hostname</label>
 				<description>Hostname or IP address of the Marstek device</description>
 			</parameter>
-			<parameter name="port" type="integer" unit="" min="1" max="65535">
+			<parameter name="port" type="integer" min="1" max="65535">
 				<label>Remote UDP Port</label>
 				<description>UDP port of the Marstek device</description>
 				<default>30000</default>
 			</parameter>
-			<parameter name="localPort" type="integer" unit="" min="0" max="65535">
+			<parameter name="localPort" type="integer" min="0" max="65535">
 				<label>Local UDP Bind Port</label>
 				<description>Local UDP port to bind to for receiving responses (0 = ephemeral, auto-assigned by OS)</description>
 				<default>0</default>
