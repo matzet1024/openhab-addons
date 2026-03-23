@@ -204,7 +204,9 @@ public class marstekHandler extends BaseThingHandler {
             task.cancel(true);
             refreshTask = null;
         }
-        this.marstekUdpClient.close();
+        if (marstekUdpClient != null) {
+            marstekUdpClient.close();
+        }
         super.dispose();
     }
 
