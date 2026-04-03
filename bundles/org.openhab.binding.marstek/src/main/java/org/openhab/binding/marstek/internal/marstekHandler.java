@@ -244,7 +244,7 @@ public class marstekHandler extends BaseThingHandler {
             logger.debug("Testing connection to Marstek device at {}:{}", getHost(), getPort());
 
             // Send Marstek.GetDevice request with longer timeout for initialization
-            String request = createRequest("Marstek.GetDevice");
+            String request = createRequest("Marstek.GetDevice", "\"ble_mac\":\"0\"");
             String response = sendRequest(request);
 
             if (response != null && response.length() > 0) {
@@ -272,7 +272,7 @@ public class marstekHandler extends BaseThingHandler {
         try {
 
             // Test if device is reachable before querying
-            boolean deviceReachable = testDeviceReachable();
+            boolean deviceReachable = queryEnergySystemMode();
 
             if (!deviceReachable) {
                 consecutiveFailures++;
@@ -291,10 +291,7 @@ public class marstekHandler extends BaseThingHandler {
             // Device responded, reset failure counter
             consecutiveFailures = 0;
 
-            // Query all components with 1 second delays to avoid overwhelming the device
-            queryEnergySystemStatus();
-            queryEnergySystemMode();
-            queryEnergyMeterStatus();
+            // queryEnergyMeterStatus();
             // queryWifiStatus();
             queryBatteryStatus();
             // PV.GetStatus is only supported on Venus D models, skip for Venus C/E
@@ -332,11 +329,11 @@ public class marstekHandler extends BaseThingHandler {
     private boolean testDeviceReachable() {
         try {
 
-            String request = createRequest("Marstek.GetDevice");
+            String request = createRequest("Marstek.GetDevice", "\"ble_mac\":\"0\"");
             String response = sendRequest(request);
             return response != null && !response.isEmpty();
         } catch (Exception e) {
-            logger.debug("Device reachability test failed: {}", e.getMessage());
+            logger.error("Device reachability test failed: {}", e.getMessage());
             return false;
         }
     }
@@ -365,10 +362,10 @@ public class marstekHandler extends BaseThingHandler {
                     logger.debug("Bat.GetStatus returned null result");
                 }
             } else {
-                logger.debug("No response from Bat.GetStatus (timeout)");
+                logger.error("No response from Bat.GetStatus (timeout)");
             }
         } catch (Exception e) {
-            logger.debug("Error querying battery status: {}", e.getMessage(), e);
+            logger.error("Error querying battery status: {}", e.getMessage(), e);
         }
     }
 
@@ -389,14 +386,14 @@ public class marstekHandler extends BaseThingHandler {
                     updateNumberChannel(CHANNEL_PV_CURRENT, result, "pv_current", Units.AMPERE);
                 }
             } else {
-                logger.debug("No response from PV.GetStatus (timeout or error)");
+                logger.error("No response from PV.GetStatus (timeout or error)");
             }
         } catch (Exception e) {
-            logger.debug("Error querying PV status: {}", e.getMessage());
+            logger.error("Error querying PV status: {}", e.getMessage());
         }
     }
 
-    private void queryEnergySystemStatus() {
+    private boolean queryEnergySystemStatus() {
         try {
             String request = createRequest("ES.GetStatus");
             String response = sendRequest(request);
@@ -418,15 +415,17 @@ public class marstekHandler extends BaseThingHandler {
                             Units.WATT_HOUR);
                     updateNumberChannel(CHANNEL_TOTAL_LOAD_ENERGY, result, "total_load_energy", Units.WATT_HOUR);
                 }
+                return true;
             } else {
-                logger.debug("No response from ES.GetStatus (timeout or error)");
+                logger.error("No response from ES.GetStatus (timeout or error)");
             }
         } catch (Exception e) {
-            logger.debug("Error querying energy system status: {}", e.getMessage());
+            logger.error("Error querying energy system status: {}", e.getMessage());
         }
+        return false;
     }
 
-    private void queryEnergySystemMode() {
+    private boolean queryEnergySystemMode() {
         try {
             String request = createRequest("ES.GetMode");
             String response = sendRequest(request);
@@ -449,12 +448,14 @@ public class marstekHandler extends BaseThingHandler {
                     updateNumberChannel(CHANNEL_OFFGRID_POWER, result, "offgrid_power", Units.WATT);
                     // Note: Phase power and CT state come from EM.GetStatus, not ES.GetMode
                 }
+                return true;
             } else {
-                logger.debug("No response from ES.GetMode (timeout or error)");
+                logger.error("No response from ES.GetMode (timeout or error)");
             }
         } catch (Exception e) {
-            logger.debug("Error querying energy system mode: {}", e.getMessage());
+            logger.error("Error querying energy system mode: {}", e.getMessage());
         }
+        return false;
     }
 
     private void queryEnergyMeterStatus() {
@@ -479,10 +480,10 @@ public class marstekHandler extends BaseThingHandler {
                     updateNumberChannel(CHANNEL_TOTAL_METER_POWER, result, "total_power", Units.WATT);
                 }
             } else {
-                logger.debug("No response from EM.GetStatus (timeout or error)");
+                logger.error("No response from EM.GetStatus (timeout or error)");
             }
         } catch (Exception e) {
-            logger.debug("Error querying energy meter status: {}", e.getMessage());
+            logger.error("Error querying energy meter status: {}", e.getMessage());
         }
     }
 

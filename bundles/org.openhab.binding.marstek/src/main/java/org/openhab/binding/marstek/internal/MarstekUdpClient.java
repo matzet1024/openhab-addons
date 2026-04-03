@@ -42,6 +42,7 @@ public class MarstekUdpClient {
 
     // Wartende Requests: id -> Future
     private final Map<String, CompletableFuture<String>> pendingRequests = new ConcurrentHashMap<>();
+    private final BlockingQueue<MarstekUdpRequest> requestQueue = new LinkedBlockingQueue<>();
 
     private final ExecutorService executor = Executors.newCachedThreadPool();
 
@@ -56,6 +57,7 @@ public class MarstekUdpClient {
         this.remotePort = remotePort;
 
         startReceiver();
+        startWorker();
     }
 
     private void startReceiver() {
@@ -91,51 +93,75 @@ public class MarstekUdpClient {
         receiverThread.start();
     }
 
+    private void startWorker() {
+        Thread workerThread = new Thread(() -> {
+            while (!socket.isClosed()) {
+                try {
+                    MarstekUdpRequest request = requestQueue.take();
+
+                    long elapsed = System.currentTimeMillis() - request.createdAt;
+                    if (elapsed > 10_000) {
+                        request.future
+                                .completeExceptionally(new TimeoutException("Timeout before send id=" + request.id));
+                        continue;
+                    }
+
+                    pendingRequests.put(request.id, request.future);
+
+                    int timeout = 250;
+                    int retries = 0;
+
+                    while (retries < 15) {
+                        logger.debug("Send/resend Package: {} retries: {} timeout {} {}", request.id, retries, timeout);
+
+                        send(request.json);
+
+                        long remaining = 10_000 - (System.currentTimeMillis() - request.createdAt);
+                        if (remaining <= 0) {
+                            break;
+                        }
+
+                        try {
+                            request.future.get(Math.min(timeout, remaining), TimeUnit.MILLISECONDS);
+                            break; // Erfolg
+                        } catch (TimeoutException e) {
+                            retries++;
+                            if (timeout < 1000) {
+                                timeout *= 2;
+                            }
+                        }
+                    }
+
+                    if (!request.future.isDone()) {
+                        pendingRequests.remove(request.id);
+                        request.future.completeExceptionally(new TimeoutException("Timeout for id=" + request.id));
+                    }
+
+                } catch (Exception e) {
+                    logger.error("Worker error", e);
+                }
+            }
+        });
+
+        workerThread.setDaemon(true);
+        workerThread.start();
+    }
+
     public String sendAndWaitForResponseWithRetry(String json) throws Exception {
         String id = extractId(json);
         if (id == null) {
             throw new IllegalArgumentException("JSON enthält keine id");
         }
 
-        CompletableFuture<String> future = new CompletableFuture<>();
-        pendingRequests.put(id, future);
-        int timeout = 250;
-        int retys = 0;
+        MarstekUdpRequest request = new MarstekUdpRequest(id, json);
 
-        while (retys < 15) {
-            logger.debug("Send/resend Package: {} retries: {} timeout {}", id, retys, timeout);
-            send(json);
-
-            try {
-                return future.get(timeout, TimeUnit.MILLISECONDS);
-            } catch (TimeoutException e) {
-                retys++;
-                if (timeout < 1000) {
-                    timeout = timeout * 2;
-                }
-            }
-        }
-        pendingRequests.remove(id);
-        logger.debug("No Reponse for: {} retries: {} timeout {}", id, retys, timeout);
-        throw new TimeoutException("Timeout für Request id=" + id);
-    }
-
-    public String sendAndWaitForResponse(String json, long timeoutMillis) throws Exception {
-        String id = extractId(json);
-        if (id == null) {
-            throw new IllegalArgumentException("JSON enthält keine id");
-        }
-
-        CompletableFuture<String> future = new CompletableFuture<>();
-        pendingRequests.put(id, future);
-
-        send(json);
+        requestQueue.put(request);
 
         try {
-            return future.get(timeoutMillis, TimeUnit.MILLISECONDS);
+            return request.future.get(10, TimeUnit.SECONDS);
         } catch (TimeoutException e) {
-            pendingRequests.remove(id);
-            throw new TimeoutException("Timeout für id=" + id);
+            logger.debug("No Reponse for: {}", id);
+            throw new TimeoutException("Timeout (queue + send + response) id=" + id);
         }
     }
 
