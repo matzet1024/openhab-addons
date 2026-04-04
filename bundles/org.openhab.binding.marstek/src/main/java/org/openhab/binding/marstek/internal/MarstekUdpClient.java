@@ -12,10 +12,18 @@
  */
 package org.openhab.binding.marstek.internal;
 
-import java.net.*;
+import java.net.DatagramPacket;
+import java.net.DatagramSocket;
+import java.net.InetAddress;
+import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.util.Map;
-import java.util.concurrent.*;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 import org.eclipse.jdt.annotation.NonNullByDefault;
 import org.eclipse.jdt.annotation.Nullable;
@@ -78,7 +86,9 @@ public class MarstekUdpClient {
 
                     if (id != null && pendingRequests.containsKey(id)) {
                         CompletableFuture<String> future = pendingRequests.remove(id);
-                        future.complete(json);
+                        if (future != null) {
+                            future.complete(json);
+                        }
                     } else {
 
                     }
@@ -174,13 +184,19 @@ public class MarstekUdpClient {
         logger.trace("Sent Message: {}", message);
     }
 
-    // Sehr einfache JSON-Extraktion (für Demo-Zwecke!)
+    // Simple JSON id extraction (for internal request/response correlation)
     @Nullable
     private String extractId(String jsonString) {
-        JsonObject json = gson.fromJson(jsonString, JsonObject.class);
-        JsonElement element = json.get("id");
-        if (!element.isJsonNull()) {
-            return element.getAsString();
+        try {
+            JsonObject json = gson.fromJson(jsonString, JsonObject.class);
+            if (json != null) {
+                JsonElement element = json.get("id");
+                if (element != null && !element.isJsonNull()) {
+                    return element.getAsString();
+                }
+            }
+        } catch (Exception e) {
+            logger.trace("Error extracting id from JSON: {}", e.getMessage());
         }
         return null;
     }

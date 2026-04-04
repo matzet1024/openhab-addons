@@ -153,6 +153,13 @@ public class marstekHandler extends BaseThingHandler {
             refreshInterval = config.refreshInterval;
         }
 
+        // Warn if refresh interval is very aggressive
+        if (refreshInterval < 5) {
+            logger.warn(
+                    "Refresh interval {} seconds is very aggressive; may cause device to drop packets or become unresponsive",
+                    refreshInterval);
+        }
+
         updateStatus(ThingStatus.UNKNOWN);
 
         try {
@@ -174,8 +181,8 @@ public class marstekHandler extends BaseThingHandler {
 
                 if (thingReachable) {
                     updateStatus(ThingStatus.ONLINE);
-                    // Schedule periodic polling
-                    refreshTask = scheduler.scheduleWithFixedDelay(this::refresh, 0, Math.max(1, refreshInterval),
+                    // Schedule periodic polling (minimum 5 seconds enforced above)
+                    refreshTask = scheduler.scheduleWithFixedDelay(this::refresh, 0, refreshInterval,
                             java.util.concurrent.TimeUnit.SECONDS);
                 } else {
                     updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.COMMUNICATION_ERROR,
@@ -199,7 +206,9 @@ public class marstekHandler extends BaseThingHandler {
             task.cancel(true);
             refreshTask = null;
         }
-        this.marstekUdpClient.close();
+        if (marstekUdpClient != null) {
+            marstekUdpClient.close();
+        }
         super.dispose();
     }
 

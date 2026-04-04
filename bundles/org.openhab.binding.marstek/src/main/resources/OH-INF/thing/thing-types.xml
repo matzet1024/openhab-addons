@@ -83,9 +83,19 @@
 				<label>Hostname</label>
 				<description>Hostname or IP address of the Marstek device</description>
 			</parameter>
+			<parameter name="port" type="integer" min="1" max="65535">
+				<label>Remote UDP Port</label>
+				<description>UDP port of the Marstek device</description>
+				<default>30000</default>
+			</parameter>
+			<parameter name="localPort" type="integer" min="0" max="65535">
+				<label>Local UDP Bind Port</label>
+				<description>Local UDP port to bind to for receiving responses (0 = ephemeral, auto-assigned by OS)</description>
+				<default>0</default>
+			</parameter>
 			<parameter name="refreshInterval" type="integer" unit="s" min="1">
 				<label>Refresh Interval</label>
-				<description>Polling interval in seconds</description>
+				<description>Polling interval in seconds (recommend at least 5 seconds to avoid overwhelming the device)</description>
 				<default>60</default>
 			</parameter>
 		</config-description>
